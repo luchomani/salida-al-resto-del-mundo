@@ -24,7 +24,7 @@ uploaded_files = st.file_uploader(
 
 
 def extraer_texto_rapido(uploaded_file):
-  """Extrae texto de manera nativa y directa del PDF en milisegundos."""
+  """Extrae texto de manera nativa y directa del PDF."""
   texto = ""
   try:
     with pdfplumber.open(uploaded_file) as pdf:
@@ -38,49 +38,52 @@ def extraer_texto_rapido(uploaded_file):
 
 
 def parsear_datos(texto, nombre_archivo):
-  """Aplica expresiones regulares para capturar los 12 campos clave requeridos."""
+  """Aplica expresiones regulares flexibles para capturar los 12 campos clave."""
   datos = {"Archivo": nombre_archivo}
+
+  # Normalizamos el texto (reemplazamos saltos de línea y espacios múltiples por un solo espacio)
+  texto_limpio = re.sub(r"\s+", " ", texto)
 
   # 1. Número del Manifiesto de Carga Internacional (MCI)
   m_mci = re.search(
-      r"(?:Manifiesto|MCI|N[°º]\s*Manifesto)[:\s]*([A-Z0-9\-]+)",
-      texto,
+      r"(?:M\.?C\.?I\.?|Manifiesto|Mto\.?|No\.?\s*Manifesto)[:\s#]*([A-Z0-9\-]{4,15})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Nro_Manifiesto_MCI"] = (
       m_mci.group(1).strip() if m_mci else "No detectado"
   )
 
-  # 2. Carta de Porte (Columna clave para agrupar operaciones)
+  # 2. Carta de Porte (CPIC)
   m_cp = re.search(
-      r"(?:Carta\s*de\s*Porte|CPIC|N[°º]\s*Carta)[:\s]*([A-Z0-9\-]+)",
-      texto,
+      r"(?:Carta\s*de\s*Porte|CPIC|C[.]?P[.]?)[:\s#]*([A-Z0-9\-]{4,15})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Carta_de_Porte"] = m_cp.group(1).strip() if m_cp else "No detectada"
 
   # 3. Placa y País del Camión / Tractocamión
   m_placa = re.search(
-      r"(?:Placa|Veh[ií]culo|Chuto)[:\s]*([A-Z0-9\-]+\s*(?:[A-Z]{3})?)",
-      texto,
+      r"(?:Placa\s*(?:Camion|Veh[ií]culo|Chuto)?|Veh[ií]culo)[:\s#]*([A-Z0-9\-]{5,8})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Placa_Camion"] = (
       m_placa.group(1).strip() if m_placa else "No detectada"
   )
 
-  # 4. Placa y País del Remolque / Unidad de Carga
+  # 4. Placa y País del Remolque
   m_rem = re.search(
-      r"(?:Remolque|Semirremolque|Batea|Unidad)[:\s]*([A-Z0-9\-]+\s*(?:[A-Z]{3})?)",
-      texto,
+      r"(?:Remolque|Semirremolque|Batea|Unidad)[:\s#]*([A-Z0-9\-]{5,8})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Placa_Remolque"] = m_rem.group(1).strip() if m_rem else "No detectado"
 
   # 5. Nombre del Conductor
   m_cond = re.search(
-      r"(?:Conductor|Chofer|Nombre\s*Conductor)[:\s]*([A-ZÁÉÍÓÚÑ\s]+)",
-      texto,
+      r"(?:Conductor|Chofer|Nombre)[:\s#]*([A-ZÁÉÍÓÚÑ\s]{5,30})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Conductor"] = (
@@ -89,8 +92,8 @@ def parsear_datos(texto, nombre_archivo):
 
   # 6. Documento de Identidad del Conductor
   m_doc_cond = re.search(
-      r"(?:C[ée]dula|DNI|Identificaci[oó]n|Pasaporte|C\.I\.)[:\s]*([A-Z0-9\-]+)",
-      texto,
+      r"(?:C[ée]dula|DNI|C\.I\.|Pasaporte)[:\s#]*([0-9\.]{6,12})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Doc_Identidad_Conductor"] = (
@@ -99,8 +102,8 @@ def parsear_datos(texto, nombre_archivo):
 
   # 7. Número de Precintos
   m_prec = re.search(
-      r"(?:Precintos?|Precintos\s*N[°º])[:\s]*([A-Z0-9\-\,\s]+)",
-      texto,
+      r"(?:Precintos?|Precintos\s*N[°º])[:\s#]*([A-Z0-9\-\,\s]{3,20})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Nro_Precintos"] = (
@@ -109,58 +112,48 @@ def parsear_datos(texto, nombre_archivo):
 
   # 8. Peso Bruto (Kg)
   m_pb = re.search(
-      r"(?:Peso\s*Bruto|Bruto)[:\s]*([0-9\.\,]+\s*(?:Kg|Kgs)?)",
-      texto,
+      r"(?:Peso\s*Bruto|Bruto)[:\s#]*([0-9\.,]+\s*(?:Kg|Kgs)?)",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Peso_Bruto"] = m_pb.group(1).strip() if m_pb else "No detectado"
 
   # 9. Peso Neto (Kg)
   m_pn = re.search(
-      r"(?:Peso\s*Neto|Neto)[:\s]*([0-9\.\,]+\s*(?:Kg|Kgs)?)",
-      texto,
+      r"(?:Peso\s*Neto|Neto)[:\s#]*([0-9\.,]+\s*(?:Kg|Kgs)?)",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Peso_Neto"] = m_pn.group(1).strip() if m_pn else "No detectado"
 
-  # 10. Término de Negociación (Incoterm y Moneda)
+  # 10. Término de Negociación (Incoterm)
   m_incoterm = re.search(
-      r"(?:Incoterm|Condici[oó]n\s*de\s*Venta|T[ée]rmino|CPT|FOB|EXW|CIF)[:\s]*([A-Z0-9\s\/]+)",
-      texto,
+      r"(?:Incoterm|Condici[oó]n|T[ée]rmino|CPT|FOB|EXW|CIF)[:\s#]*([A-Z0-9\s\/]{3,15})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Termino_Negociacion"] = (
       m_incoterm.group(1).strip() if m_incoterm else "No detectado"
   )
 
-  # 11. Formulario que Asocia (ej. FMM o Declaraciones)
+  # 11. Formulario Asociado (FMM)
   m_fmm = re.search(
-      r"(?:FMM|Formulario\s*de\s*Movimiento|Declaraci[oó]n)[:\s]*([0-9\-]+)",
-      texto,
+      r"(?:FMM|Movimiento|Declaraci[oó]n)[:\s#]*([0-9\-]{5,15})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Formulario_Asociado"] = (
       m_fmm.group(1).strip() if m_fmm else "No detectado"
   )
 
-  # 12. Formulario de Salida (Zona Franca)
+  # 12. Formulario de Salida
   m_salida = re.search(
-      r"(?:Salida|Formulario\s*de\s*Salida|ZFS)[:\s]*([A-Z0-9\-]+)",
-      texto,
+      r"(?:Salida|ZFS|Formulario)[:\s#]*([0-9\-]{5,15})",
+      texto_limpio,
       re.IGNORECASE,
   )
   datos["Formulario_Salida"] = (
       m_salida.group(1).strip() if m_salida else "No detectado"
-  )
-
-  # Destinatario general de respaldo
-  m_dest = re.search(
-      r"(?:Destinatario|Consignatario)[:\s]*([A-ZÁÉÍÓÚÑ0-9\.\,\s]+)",
-      texto,
-      re.IGNORECASE,
-  )
-  datos["Destinatario"] = (
-      m_dest.group(1).strip() if m_dest else "No detectado"
   )
 
   return datos
@@ -168,12 +161,14 @@ def parsear_datos(texto, nombre_archivo):
 
 if uploaded_files:
   resultados = []
+  textos_crudos_dict = {}
 
   barra_progreso = st.progress(0)
   total_archivos = len(uploaded_files)
 
   for i, archivo in enumerate(uploaded_files):
     texto_crudo = extraer_texto_rapido(archivo)
+    textos_crudos_dict[archivo.name] = texto_crudo  # Guardar para diagnóstico
     info_extraida = parsear_datos(texto_crudo, archivo.name)
     resultados.append(info_extraida)
     barra_progreso.progress((i + 1) / total_archivos)
@@ -187,7 +182,7 @@ if uploaded_files:
     st.metric(
         label="📁 Documentos Procesados",
         value=total_archivos,
-        delta="Lectura instantánea",
+        delta="Lectura optimizada",
     )
   with col2:
     exitosos = (df_resultado["Nro_Manifiesto_MCI"] != "No detectado").sum()
@@ -196,6 +191,19 @@ if uploaded_files:
   st.markdown("---")
   st.subheader("📋 Consolidado Logístico de Salidas")
   st.dataframe(df_resultado, use_container_width=True)
+
+  # 🔍 HERRAMIENTA DE DIAGNÓSTICO: Ver qué leyó exactamente el PDF
+  with st.expander("🔍 Ver Texto Crudo Extraído (Herramienta de Diagnóstico)"):
+    archivo_sel = st.selectbox(
+        "Selecciona un archivo para inspeccionar su texto:",
+        list(textos_crudos_dict.keys()),
+    )
+    if archivo_sel:
+      st.text_area(
+          "Texto plano extraído por el sistema:",
+          textos_crudos_dict[archivo_sel],
+          height=250,
+      )
 
   # Descarga a Excel
   output = io.BytesIO()
@@ -215,6 +223,5 @@ if uploaded_files:
   )
 else:
   st.info(
-      "👆 Sube tus manifiestos en PDF arriba para iniciar la extracción de"
-      " campos."
+      "👆 Sube tus manifiestos en PDF arriba para iniciar la extracción flexible."
   )
